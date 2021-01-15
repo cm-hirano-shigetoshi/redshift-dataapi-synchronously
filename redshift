@@ -1,0 +1,81 @@
+#!/usr/bin/env python
+import time
+import boto3
+import argparse
+
+p = argparse.ArgumentParser()
+p.add_argument('-C', '--cluster', default='cluster_name')
+p.add_argument('-D', '--database', default='sample_db')
+p.add_argument('-U', '--user', default='dbuser')
+p.add_argument('-c', '--command')
+p.add_argument('-f', '--file')
+args = p.parse_args()
+
+# Redshift接続情報
+CLUSTER_NAME = args.cluster
+DATABASE_NAME = args.database
+DB_USER = args.user
+
+# 実行するSQLを設定
+if args.command is not None:
+    sql = args.command
+elif args.file is not None:
+    with open(args.file) as f:
+        sql = '\n'.join(f.readlines())
+
+
+def execute_query():
+    # Redshiftにクエリを投げる。非同期なのですぐ返ってくる
+    data_client = boto3.client('redshift-data')
+    result = data_client.execute_statement(
+        ClusterIdentifier=CLUSTER_NAME,
+        Database=DATABASE_NAME,
+        DbUser=DB_USER,
+        Sql=sql,
+    )
+
+    # 実行IDを取得
+    id = result['Id']
+    #print('id = {}'.format(id))
+
+    # クエリが終わるのを待つ
+    statement = ''
+    status = ''
+    while status != 'FINISHED' and status != 'FAILED' and status != 'ABORTED':
+        statement = data_client.describe_statement(Id=id)
+        #print(statement)
+        status = statement['Status']
+        time.sleep(1)
+
+    # 結果の表示
+    if status == 'FINISHED':
+        if int(statement['ResultSize']) > 0:
+            # select文等なら戻り値を表示
+            statement = data_client.get_statement_result(Id=id)
+            return statement['Records']
+        else:
+            # 戻り値がないものはFINISHだけ出力して終わり
+            print('QUERY FINSHED')
+            return None
+    elif status == 'FAILED':
+        # 失敗時
+        print('QUERY FAILED\n{}'.format(statement))
+        return None
+    elif status == 'ABORTED':
+        # ユーザによる停止時
+        print('QUERY ABORTED: The query run was stopped by the user.')
+
+
+def print_records(records):
+    for record in records:
+        record_columns = []
+        for c in record:
+            assert len(c) == 1
+            for v in c.values():
+                record_columns.append(str(v))
+        print('\t'.join(record_columns))
+
+
+records = execute_query()
+if records is not None:
+    print_records(records)
