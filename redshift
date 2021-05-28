@@ -52,7 +52,13 @@ def execute_query():
         if int(statement['ResultSize']) > 0:
             # select文等なら戻り値を表示
             statement = data_client.get_statement_result(Id=id)
-            return statement['Records']
+            records = []
+            while statement.get('NextToken'):
+                records.extend(statement['Records'])
+                statement = data_client.get_statement_result(
+                    Id=id, NextToken=statement['NextToken'])
+            records.extend(statement['Records'])
+            return records
         else:
             # 戻り値がないものはFINISHだけ出力して終わり
             print('QUERY FINSHED')
