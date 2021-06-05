@@ -89,9 +89,6 @@ def write_result(id):
     print_records(result['Records'])
 
 
-if args.async_flag:
-    execute_query(async_flag=True)
-else:
-    id = execute_query()
-    if id is not None:
-        write_result(id)
+id = execute_query(async_flag=args.async_flag)
+if id is not None:
+    write_result(id)
