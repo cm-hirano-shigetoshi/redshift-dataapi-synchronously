@@ -1,16 +1,17 @@
 #!/usr/bin/env python
+import argparse
 import sys
 import time
+
 import boto3
-import argparse
 
 p = argparse.ArgumentParser()
-p.add_argument('-C', '--cluster', default='cluster_name')
-p.add_argument('-D', '--database', default='sample_db')
-p.add_argument('-U', '--user', default='dbuser')
-p.add_argument('-c', '--command')
-p.add_argument('-f', '--file')
-p.add_argument('-a', '--async_flag', action='store_true')
+p.add_argument("-C", "--cluster", default="cluster_name")
+p.add_argument("-D", "--database", default="sample_db")
+p.add_argument("-U", "--user", default="dbuser")
+p.add_argument("-c", "--command")
+p.add_argument("-f", "--file")
+p.add_argument("-a", "--async_flag", action="store_true")
 args = p.parse_args()
 
 # Redshift接続情報
@@ -18,63 +19,69 @@ CLUSTER_NAME = args.cluster
 DATABASE_NAME = args.database
 DB_USER = args.user
 
-data_client = boto3.client('redshift-data')
+data_client = boto3.client("redshift-data")
 
 # 実行するSQLを設定
 if args.command is not None:
     sql = args.command
 elif args.file is not None:
     with open(args.file) as f:
-        sql = '\n'.join(f.readlines())
+        sql = "\n".join(f.readlines())
+sqls = [q for q in sql.split(";") if len(q.strip()) > 0]
 
 
 def execute_query(async_flag=False):
     # Redshiftにクエリを投げる。非同期なのですぐ返ってくる
-    result = data_client.execute_statement(
+    result = data_client.batch_execute_statement(
         ClusterIdentifier=CLUSTER_NAME,
         Database=DATABASE_NAME,
         DbUser=DB_USER,
-        Sql=sql,
+        Sqls=sqls,
     )
 
     if async_flag:
         print(result)
-        return
+        return []
     else:
         print(result, file=sys.stderr)
 
     # 実行IDを取得
-    id = result['Id']
-    #print('id = {}'.format(id))
+    id = result["Id"]
+    # print('id = {}'.format(id))
 
     # クエリが終わるのを待つ
-    statement = ''
-    status = ''
-    while status != 'FINISHED' and status != 'FAILED' and status != 'ABORTED':
+    statement = ""
+    status = ""
+    while status != "FINISHED" and status != "FAILED" and status != "ABORTED":
         statement = data_client.describe_statement(Id=id)
-        #print(statement)
-        status = statement['Status']
+        # print(statement)
+        status = statement["Status"]
         time.sleep(1)
 
     # 結果の表示
-    if status == 'FINISHED':
-        if int(statement['ResultSize']) > 0:
-            return id
+    if status == "FINISHED":
+        if statement["HasResultSet"]:
+            ids = [
+                f"{id}:{i+1}"
+                for i, x in enumerate(statement["SubStatements"])
+                if x["HasResultSet"]
+            ]
+            return ids
         else:
             # 戻り値がないものはFINISHだけ出力して終わり
-            print('QUERY FINSHED')
-            return None
-    elif status == 'FAILED':
+            print("QUERY FINSHED")
+            return []
+    elif status == "FAILED":
         # 失敗時
-        print('QUERY FAILED\n{}'.format(statement))
-        return None
-    elif status == 'ABORTED':
+        print("QUERY FAILED\n{}".format(statement))
+        return []
+    elif status == "ABORTED":
         # ユーザによる停止時
-        print('QUERY ABORTED: The query run was stopped by the user.')
-        return None
+        print("QUERY ABORTED: The query run was stopped by the user.")
+        return []
 
 
-def write_result(id):
+def write_result(ids):
     def print_records(records):
         for record in records:
             record_columns = []
@@ -82,16 +89,18 @@ def write_result(id):
                 assert len(c) == 1
                 for v in c.values():
                     record_columns.append(str(v))
-            print('\t'.join(record_columns))
+            print("\t".join(record_columns))
 
-    result = data_client.get_statement_result(Id=id)
-    while result.get('NextToken'):
-        print_records(result['Records'])
-        result = data_client.get_statement_result(
-            Id=id, NextToken=result['NextToken'])
-    print_records(result['Records'])
+    for id in ids:
+        result = data_client.get_statement_result(Id=id)
+        while result.get("NextToken"):
+            print_records(result["Records"])
+            result = data_client.get_statement_result(
+                Id=id, NextToken=result["NextToken"]
+            )
+        print_records(result["Records"])
 
 
-id = execute_query(async_flag=args.async_flag)
-if id is not None:
-    write_result(id)
+ids = execute_query(async_flag=args.async_flag)
+if len(ids) > 0:
+    write_result(ids)
