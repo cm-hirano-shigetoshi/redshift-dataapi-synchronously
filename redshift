@@ -84,11 +84,10 @@ def execute_query(async_flag=False):
 def write_result(ids):
     def print_records(records):
         for record in records:
+            assert len(record) == 1
             record_columns = []
-            for c in record:
-                assert len(c) == 1
-                for v in c.values():
-                    record_columns.append(str(v))
+            for k, v in record[0].items():
+                record_columns.append(str(v))
             print("\t".join(record_columns))
 
     for id in ids:
