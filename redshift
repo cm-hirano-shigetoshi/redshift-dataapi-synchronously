@@ -87,7 +87,11 @@ def write_result(ids):
             assert len(record) == 1
             record_columns = []
             for k, v in record[0].items():
-                record_columns.append(str(v))
+                if k == "isNull":
+                    assert v == True
+                    record_columns.append("null")
+                else:
+                    record_columns.append(str(v))
             print("\t".join(record_columns))
 
     for id in ids:
