@@ -84,14 +84,15 @@ def execute_query(async_flag=False):
 def write_result(ids):
     def print_records(records):
         for record in records:
-            assert len(record) == 1
             record_columns = []
-            for k, v in record[0].items():
-                if k == "isNull":
-                    assert v == True
-                    record_columns.append("null")
-                else:
-                    record_columns.append(str(v))
+            for column in record:
+                assert len(column) == 1
+                for k, v in column.items():
+                    if k == "isNull":
+                        assert v == True
+                        record_columns.append("null")
+                    else:
+                        record_columns.append(str(v))
             print("\t".join(record_columns))
 
     for id in ids:
