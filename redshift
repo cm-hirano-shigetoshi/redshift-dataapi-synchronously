@@ -12,6 +12,7 @@ p.add_argument("-U", "--user", default="dbuser")
 p.add_argument("-c", "--command")
 p.add_argument("-f", "--file")
 p.add_argument("-a", "--async_flag", action="store_true")
+p.add_argument("--statement_result", default=None)
 args = p.parse_args()
 
 # Redshift接続情報
@@ -21,16 +22,8 @@ DB_USER = args.user
 
 data_client = boto3.client("redshift-data")
 
-# 実行するSQLを設定
-if args.command is not None:
-    sql = args.command
-elif args.file is not None:
-    with open(args.file) as f:
-        sql = "\n".join(f.readlines())
-sqls = [q for q in sql.split(";") if len(q.strip()) > 0]
 
-
-def execute_query(async_flag=False):
+def execute_query(sqls, async_flag=False):
     # Redshiftにクエリを投げる。非同期なのですぐ返ってくる
     result = data_client.batch_execute_statement(
         ClusterIdentifier=CLUSTER_NAME,
@@ -89,7 +82,7 @@ def write_result(ids):
                 assert len(column) == 1
                 for k, v in column.items():
                     if k == "isNull":
-                        assert v == True
+                        assert v
                         record_columns.append("null")
                     else:
                         record_columns.append(str(v))
@@ -105,6 +98,17 @@ def write_result(ids):
         print_records(result["Records"])
 
 
-ids = execute_query(async_flag=args.async_flag)
-if len(ids) > 0:
-    write_result(ids)
+if args.statement_result:
+    # 結果を取得して表示だけする
+    write_result([args.statement_result])
+else:
+    # SQLを実行する
+    if args.command is not None:
+        sql = args.command
+    elif args.file is not None:
+        with open(args.file) as f:
+            sql = "\n".join(f.readlines())
+    sqls = [q for q in sql.split(";") if len(q.strip()) > 0]
+    ids = execute_query(sqls, async_flag=args.async_flag)
+    if len(ids) > 0:
+        write_result(ids)
